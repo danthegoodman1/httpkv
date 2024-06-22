@@ -2,7 +2,7 @@ package kv
 
 import "context"
 
-func Get(ctx context.Context, key string) (string, error) {
+func Get(ctx context.Context, key string) ([]byte, error) {
 	panic("todo")
 }
 
