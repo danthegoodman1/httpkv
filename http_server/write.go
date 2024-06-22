@@ -19,7 +19,9 @@ func (s *HTTPServer) WriteKey(c *CustomContext) error {
 	if err := ValidateRequest(c, &params); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
-	logger := zerolog.Ctx(c.Request().Context())
+
+	ctx := c.Request().Context()
+	logger := zerolog.Ctx(ctx)
 	logger.Debug().Interface("params", params).Msg("Params")
 
 	return c.String(http.StatusAccepted, fmt.Sprintf("Writing key: %s", params.Key))
