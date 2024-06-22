@@ -48,6 +48,9 @@ func StartHTTPServer() *HTTPServer {
 
 	s.Echo.GET("/", ccHandler(s.GetOrList))
 	s.Echo.GET("/:key_prefix", ccHandler(s.GetOrList))
+	s.Echo.POST("/:key", ccHandler(s.WriteKey))
+
+	s.Echo.HTTPErrorHandler = customHTTPErrorHandler
 
 	s.Echo.Listener = listener
 	go func() {
