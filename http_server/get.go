@@ -6,11 +6,25 @@ import (
 	"net/http"
 )
 
-type GetOrListParams struct {
-	Key string `param:"key" validate:"lte=1024"`
+type (
+	GetOrListParams struct {
+		GetParams
+		ListParams
+	}
 
-	List *string `query:"list"`
-}
+	GetParams struct {
+		Key string `param:"key" validate:"lte=1024"`
+	}
+
+	ListParams struct {
+		Prefix   *string `param:"key"`
+		List     *string `query:"list"`
+		Reverse  *string `query:"reverse"`
+		From     *string `query:"from"`
+		Limit    *int    `query:"limit"`
+		ListVals *string `query:"vals"`
+	}
+)
 
 func (s *HTTPServer) GetOrList(c *CustomContext) error {
 	var params GetOrListParams
@@ -20,6 +34,7 @@ func (s *HTTPServer) GetOrList(c *CustomContext) error {
 
 	ctx := c.Request().Context()
 	logger := zerolog.Ctx(ctx)
+	logger.Debug().Interface("params", params).Msg("Params")
 	if params.List != nil {
 		logger.Debug().Msg("got list request")
 
