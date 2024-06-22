@@ -3,6 +3,7 @@ package gologger
 import (
 	"context"
 	"errors"
+	"github.com/joho/godotenv"
 	"os"
 	"runtime"
 	"strconv"
@@ -31,6 +32,13 @@ func init() {
 			function = " " + funName + "()"
 		}
 		return file + ":" + strconv.Itoa(line) + function
+	}
+
+	if _, err := os.Stat(".env"); err == nil {
+		err = godotenv.Load()
+		if err != nil {
+			panic(err)
+		}
 	}
 }
 

@@ -5,43 +5,25 @@ import (
 	"errors"
 	"fmt"
 	"github.com/danthegoodman1/GoAPITemplate/observability"
-	"github.com/danthegoodman1/GoAPITemplate/temporal"
-	"github.com/joho/godotenv"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"github.com/danthegoodman1/GoAPITemplate/crdb"
 	"github.com/danthegoodman1/GoAPITemplate/gologger"
 	"github.com/danthegoodman1/GoAPITemplate/http_server"
-	"github.com/danthegoodman1/GoAPITemplate/migrations"
 	"github.com/danthegoodman1/GoAPITemplate/utils"
 )
 
 var logger = gologger.NewLogger()
 
+func init() {
+	utils.LoadEnv()
+}
+
 func main() {
-	if _, err := os.Stat(".env"); err == nil {
-		err = godotenv.Load()
-		if err != nil {
-			logger.Error().Err(err).Msg("error loading .env file, exiting")
-			os.Exit(1)
-		}
-	}
-	logger.Debug().Msg("starting unnamed api")
-
-	if err := crdb.ConnectToDB(); err != nil {
-		logger.Error().Err(err).Msg("error connecting to CRDB")
-		os.Exit(1)
-	}
-
-	err := migrations.CheckMigrations(utils.CRDB_DSN)
-	if err != nil {
-		logger.Error().Err(err).Msg("Error checking migrations")
-		os.Exit(1)
-	}
+	logger.Debug().Msg("starting httpkv")
 
 	prometheusReporter := observability.NewPrometheusReporter()
 	go func() {
@@ -51,12 +33,6 @@ func main() {
 			os.Exit(1)
 		}
 	}()
-
-	err = temporal.Run(context.Background(), prometheusReporter)
-	if err != nil {
-		logger.Error().Err(err).Msg("Temporal init error")
-		os.Exit(1)
-	}
 
 	httpServer := http_server.StartHTTPServer()
 
