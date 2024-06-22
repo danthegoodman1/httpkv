@@ -46,8 +46,8 @@ func StartHTTPServer() *HTTPServer {
 	s.Echo.Use(middleware.CORS())
 	s.Echo.Validator = &CustomValidator{validator: validator.New()}
 
-	// technical - no auth
-	s.Echo.GET("/hc", s.HealthCheck)
+	s.Echo.GET("/", ccHandler(s.GetOrList))
+	s.Echo.GET("/:key_prefix", ccHandler(s.GetOrList))
 
 	s.Echo.Listener = listener
 	go func() {
@@ -81,7 +81,7 @@ func ValidateRequest(c echo.Context, s interface{}) error {
 }
 
 func (*HTTPServer) HealthCheck(c echo.Context) error {
-	return c.String(http.StatusOK, "ok")
+	return c.String(http.StatusOK, "yes")
 }
 
 func (s *HTTPServer) Shutdown(ctx context.Context) error {
