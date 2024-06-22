@@ -48,7 +48,7 @@ func StartHTTPServer() *HTTPServer {
 
 	s.Echo.GET("/", ccHandler(s.GetOrList))
 	s.Echo.GET("/:key_prefix", ccHandler(s.GetOrList))
-	s.Echo.POST("/:key", ccHandler(s.WriteKey))
+	s.Echo.POST("/:key", ccHandler(s.WriteKey), middleware.BodyLimit("16K"))
 
 	s.Echo.HTTPErrorHandler = customHTTPErrorHandler
 

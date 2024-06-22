@@ -14,6 +14,9 @@ type (
 
 	GetParams struct {
 		Key string `param:"key" validate:"lte=1024"`
+
+		Start *int `query:"start"`
+		End   *int `query:"end"`
 	}
 
 	ListParams struct {
