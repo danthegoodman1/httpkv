@@ -11,7 +11,6 @@ import (
 	"github.com/danthegoodman1/httpkv/utils"
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog"
-	"github.com/samber/lo"
 	"go.opentelemetry.io/otel/attribute"
 	"net/http"
 )
@@ -33,7 +32,6 @@ type (
 		Prefix   *string `param:"key"`
 		List     *string `query:"list"`
 		Reverse  *string `query:"reverse"`
-		From     *string `query:"from"`
 		Limit    *int    `query:"limit"`
 		ListVals *string `query:"vals"`
 	}
@@ -112,19 +110,27 @@ func (s *HTTPServer) listItems(c *CustomContext, params ListParams) error {
 	_, span := tracing.CreateSpan(c.Request().Context(), tracer, "listItems")
 	defer span.End()
 	span.SetAttributes(attribute.String("params", string(utils.MustMarshal(params))))
+
+	opts := fdb.RangeOptions{
+		Limit:   utils.Deref(params.Limit, 100),
+		Reverse: params.Reverse != nil,
+	}
+
+	// Prepare the range
+	keyRange := fdb.SelectorRange{
+		Begin: fdb.FirstGreaterOrEqual(fdb.Key("")),
+		End:   fdb.LastLessOrEqual(fdb.Key{0xff}),
+	}
+	if params.Prefix != nil && params.Reverse != nil {
+		// Reversing from an end offset
+		keyRange.End = fdb.LastLessThan(fdb.Key(*params.Prefix))
+	} else if params.Prefix != nil {
+		// Forward from a start offset
+		keyRange.Begin = fdb.FirstGreaterThan(fdb.Key(*params.Prefix))
+	}
+
 	var items [][]byte
-
-	limit := utils.Deref(params.Limit, 100)
-
 	_, err := db.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
-		opts := fdb.RangeOptions{
-			Limit:   limit,
-			Reverse: params.Reverse != nil,
-		}
-		keyRange := fdb.KeyRange{
-			Begin: fdb.Key(utils.Deref(params.From, "")),
-			End:   fdb.Key(lo.Ternary(params.Reverse != nil, utils.Deref(params.From, "\xff"), "\xff")),
-		}
 		iter := tx.GetRange(keyRange, opts).Iterator()
 		for iter.Advance() {
 			fdbItem, err := iter.Get()

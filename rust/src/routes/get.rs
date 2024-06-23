@@ -8,11 +8,11 @@ use axum::{
 };
 // use axum_extra::extract::Query;
 use anyhow::anyhow;
+use base64::prelude::*;
 use foundationdb::{KeySelector, RangeOption};
 use serde::Deserialize;
 use tracing::{debug, info_span, span, Level};
 use validator::Validate;
-use base64::prelude::*;
 
 #[derive(Deserialize, Debug, Validate)]
 pub struct GetOrListParams {
@@ -94,7 +94,10 @@ async fn get_item(
             .body(body.into())
             .expect("Failed to construct response"))
     } else {
-        Err(AppError::CustomCode(anyhow!("not found"), StatusCode::NOT_FOUND))
+        Err(AppError::CustomCode(
+            anyhow!("not found"),
+            StatusCode::NOT_FOUND,
+        ))
     }
 }
 
@@ -104,37 +107,30 @@ async fn list_items(
     params: &GetOrListParams,
     prefix: Option<String>,
 ) -> Result<Response, AppError> {
-    let mut items: Vec<u8> = Vec::new();
     let with_vals = params.with_vals.is_some();
+    let reverse = params.reverse.is_some();
 
     // Build the list of items
-    let range_start = prefix.clone().or(Some(String::from(""))).unwrap(); // "" is beginning of DB
-    let reverse = params.reverse.is_some();
-    let range_end = match prefix {
-        Some(p) => {
-            if reverse {
-                p.as_bytes().to_owned() // use the prefix
-            }
-            vec![0xFF] // otherwise start from the end
-        },
-        None => vec![0xFF], // 0xFF is end of DB
-    };
-    let range_end_str = String::from_utf8(range_end).unwrap();
-    let limit = params.limit.or(Some(100)).unwrap() as usize;
-    debug!(
-        start = range_start,
-        end = range_end_str,
-        limit = limit,
-        with_vals = with_vals,
-        reverse = reverse,
-        "Listing items",
-    );
+    let mut range_start = KeySelector::first_greater_or_equal(""); // "" is beginning of DB
+    let mut range_end = KeySelector::last_less_or_equal(vec![0xFF]); // 0xFF means end
 
-    let opt = RangeOption::from((KeySelector::first_greater_or_equal(range_start), KeySelector::first_greater_or_equal(range_end)));
+    if prefix.is_some() && params.reverse.is_some() {
+        // Reversing from an end offset
+        range_end = KeySelector::last_less_than(prefix.unwrap());
+    } else if prefix.is_some() {
+        // Forward from a start offset
+        range_start = KeySelector::first_greater_than(prefix.unwrap());
+    }
+
+    debug!(prefix = prefix, params = params, "Listing items",);
+
+    let opt = RangeOption::from((range_start, range_end));
     opt.reverse = reverse;
-    opt.limit = Some(limit);
+    opt.limit = params.limit.or(Some(100));
     let trx = state.fdb.create_trx()?; // no need to commit for read only
     let range = trx.get_range(&opt, 1, true).await?;
+
+    let mut items: Vec<u8> = Vec::new();
     for item in &range {
         items.extend(item.key());
         if with_vals {
