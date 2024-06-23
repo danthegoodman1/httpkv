@@ -86,7 +86,9 @@ When you list, by default the response is new-line separated keys.
 
 (omit the `/prefix` to list from the beginning)
 
-This will return a default max limit of 1000 items, you can change that with the `limit=n` query param. You can set the offset with the `from=abc` (non-inclusive) param. You can reverse sort with the `reverse` param. If you reverse with no prefix it will start at the end. If you use the `from` query param while reverse sorting it will start at that point and work backwards from there.
+Prefix is non-inclusive.
+
+This will return a default max limit of 1000 items, you can change that with the `limit=n` query param. You can reverse sort with the `reverse` param. If you reverse with no prefix it will start at the end. If you use the prefix while reverse sorting it will start at that point and work backwards from there.
 
 This makes it dead simple to paginate forward and backward.
 
