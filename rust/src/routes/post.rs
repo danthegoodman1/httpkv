@@ -55,6 +55,15 @@ pub async fn write_key(
                 }
             }
             None => {
+                if params.version.is_some() {
+                    return Err(AppError::CustomCode(
+                        anyhow!(
+                            "Key {} does not exist (v)",
+                            key,
+                        ),
+                        axum::http::StatusCode::CONFLICT,
+                    ));
+                }
                 if let Some(_) = params.if_exists {
                     // Check that it exists first
                     if !state.kv.read().await.contains_key(&key) {

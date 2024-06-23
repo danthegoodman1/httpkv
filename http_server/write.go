@@ -40,6 +40,8 @@ func (s *HTTPServer) WriteKey(c *CustomContext) error {
 		return c.String(http.StatusConflict, fmt.Sprintf("Key %s does not exist (ix)", params.Key))
 	} else if exists && params.Version != nil && item.Version != *params.Version {
 		return c.String(http.StatusConflict, fmt.Sprintf("Provided version %d does not match found version %d", *params.Version, item.Version))
+	} else if !exists && params.Version != nil {
+		return c.String(http.StatusConflict, fmt.Sprintf("Key %s does not exist (v)", params.Key))
 	}
 
 	// Otherwise write it
