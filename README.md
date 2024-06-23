@@ -96,10 +96,11 @@ You can choose to list keys and values together with the `vals` and `list` query
 
 ## Conditional Write
 
-There are 2 kinds of conditional writes:
+There are 3 kinds of conditional writes:
 
 - Write if not exists
 - Update if exists
+- Update if the version is what I expect
 
 By default, any `POST` request will upsert the value.
 
