@@ -12,6 +12,7 @@ use foundationdb::{KeySelector, RangeOption};
 use serde::Deserialize;
 use tracing::{debug, info_span, span, Level};
 use validator::Validate;
+use base64::prelude::*;
 
 #[derive(Deserialize, Debug, Validate)]
 pub struct GetOrListParams {
@@ -135,29 +136,15 @@ async fn list_items(
     let trx = state.fdb.create_trx()?; // no need to commit for read only
     let range = trx.get_range(&opt, 1, true).await?;
     for item in &range {
+        items.extend(item.key());
         if with_vals {
-            items.extend(item.key());
-            items.extend(b"\n");
-
+            items.extend(b":");
             // Deserialize the data
             let data: Item = serde_json::from_slice(item.value()).unwrap();
-            items.extend(item.data);
-            items.extend(b"\n");
-            items.extend(b"\n");
-        } else {
-            items.extend(item.key());
-            items.extend(b"\n");
+            items.extend(BASE64_STANDARD.encode(item.data).as_bytes());
         }
+        items.extend(b"\n");
     }
 
-    let mut sep_len = 0;
-    if items.len() > 0 {
-        let sep = match with_vals {
-            true => "\n\n",
-            false => "\n",
-        }
-        .as_bytes();
-        sep_len = sep.len();
-    }
-    Ok(items[0..items.len() - sep_len].to_vec().into_response())
+    Ok(items[0..items.len() - b"\n".len()].to_vec().into_response())
 }
