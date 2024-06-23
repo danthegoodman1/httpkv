@@ -7,7 +7,7 @@ use axum::{
 // use axum_extra::extract::Query;
 use anyhow::anyhow;
 use serde::Deserialize;
-use tracing::{debug, debug_span, event};
+use tracing::{debug};
 use validator::Validate;
 
 #[derive(Deserialize, Debug, Validate)]
