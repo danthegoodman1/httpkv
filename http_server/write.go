@@ -49,7 +49,6 @@ func (s *HTTPServer) WriteKey(c *CustomContext) error {
 		Version: time.Now().UnixNano(),
 		Data:    body,
 	}
-	fmt.Println(string(body))
 
 	logger.Debug().Msgf("Wrote key '%s'", params.Key)
 

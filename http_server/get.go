@@ -63,7 +63,6 @@ func (s *HTTPServer) getItem(c *CustomContext, params GetParams) error {
 
 	item, exists := tempDB[params.Key]
 	if exists {
-		fmt.Println("Got version", item.Version, string(item.Data))
 		c.Response().Header().Set("version", fmt.Sprint(item.Version))
 		var data []byte
 		if params.Start != nil || params.End != nil {
@@ -97,7 +96,6 @@ func (s *HTTPServer) listItems(c *CustomContext, params ListParams) error {
 		items = append(items, b)
 
 		if i >= limit {
-			fmt.Println("breaking at limit", limit)
 			break
 		}
 		i++
