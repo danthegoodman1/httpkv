@@ -33,7 +33,7 @@ pub async fn start(addr: &str) {
             get(routes::get::get_key).post(routes::post::write_key),
         )
         .with_state(state)
-        .layer(DefaultBodyLimit::max(99_000));
+        .layer(DefaultBodyLimit::max(95_000));
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
 
