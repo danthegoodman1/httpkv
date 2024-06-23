@@ -56,7 +56,7 @@ func StartHTTPServer() *HTTPServer {
 
 	s.Echo.GET("/", ccHandler(s.GetOrList))
 	s.Echo.GET("/:key", ccHandler(s.GetOrList))
-	s.Echo.POST("/:key", ccHandler(s.WriteKey), middleware.BodyLimit("99K"))
+	s.Echo.POST("/:key", ccHandler(s.WriteKey), middleware.BodyLimit("95K"))
 
 	s.Echo.HTTPErrorHandler = customHTTPErrorHandler
 	tempDB = map[string]Item{}
