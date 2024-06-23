@@ -2,6 +2,7 @@ package http_server
 
 import (
 	"bytes"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
@@ -115,7 +116,6 @@ func (s *HTTPServer) listItems(c *CustomContext, params ListParams) error {
 
 	// TODO: Ignoring offset and reverse (this is easy in fdb)
 	limit := utils.Deref(params.Limit, 100)
-	sep := lo.Ternary(params.ListVals == nil, "\n", "\n\n")
 
 	_, err := db.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
 		opts := fdb.RangeOptions{
@@ -136,8 +136,10 @@ func (s *HTTPServer) listItems(c *CustomContext, params ListParams) error {
 			var b []byte
 			b = append(b, []byte(fdbItem.Key)...)
 			if params.ListVals != nil {
-				b = append(b, []byte("\n")...)
-				b = append(b, fdbItem.Value...)
+				b = append(b, []byte(":")...)
+				var encoded []byte
+				base64.StdEncoding.Encode(encoded, fdbItem.Value)
+				b = append(b, encoded...)
 			}
 
 			items = append(items, b)
@@ -150,5 +152,5 @@ func (s *HTTPServer) listItems(c *CustomContext, params ListParams) error {
 		return fmt.Errorf("error in ReadTransaction: %w", err)
 	}
 
-	return c.Blob(http.StatusOK, "application/octet-stream", bytes.Join(items, []byte(sep)))
+	return c.Blob(http.StatusOK, "application/octet-stream", bytes.Join(items, []byte("\n")))
 }
