@@ -81,7 +81,7 @@ func (s *HTTPServer) getItem(c *CustomContext, params GetParams) error {
 func (s *HTTPServer) listItems(c *CustomContext, params ListParams) error {
 	var items [][]byte
 
-	// TODO: Ignoring offset and reverse
+	// TODO: Ignoring offset and reverse (this is easy in fdb)
 	limit := utils.Deref(params.Limit, 100)
 	sep := lo.Ternary(params.ListVals == nil, "\n", "\n\n")
 
