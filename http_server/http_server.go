@@ -28,6 +28,10 @@ type CustomValidator struct {
 	validator *validator.Validate
 }
 
+var (
+	tempDB map[string]Item // TODO: Not even threadsafe lol
+)
+
 func StartHTTPServer() *HTTPServer {
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%s", utils.GetEnvOrDefault("HTTP_PORT", "8080")))
 	if err != nil {
@@ -39,7 +43,7 @@ func StartHTTPServer() *HTTPServer {
 	}
 	s.Echo.HideBanner = true
 	s.Echo.HidePort = true
-	s.Echo.JSONSerializer = &utils.NoEscapeJSONSerializer{}
+	// s.Echo.JSONSerializer = &utils.NoEscapeJSONSerializer{}
 
 	s.Echo.Use(CreateReqContext)
 	s.Echo.Use(LoggerMiddleware)
@@ -47,10 +51,11 @@ func StartHTTPServer() *HTTPServer {
 	s.Echo.Validator = &CustomValidator{validator: validator.New()}
 
 	s.Echo.GET("/", ccHandler(s.GetOrList))
-	s.Echo.GET("/:key_prefix", ccHandler(s.GetOrList))
+	s.Echo.GET("/:key", ccHandler(s.GetOrList))
 	s.Echo.POST("/:key", ccHandler(s.WriteKey), middleware.BodyLimit("64K"))
 
 	s.Echo.HTTPErrorHandler = customHTTPErrorHandler
+	tempDB = map[string]Item{}
 
 	s.Echo.Listener = listener
 	go func() {
