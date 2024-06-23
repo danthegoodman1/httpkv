@@ -34,7 +34,7 @@ pub async fn write_key(
     let val = trx.get(key.as_bytes(), true).await?;
     match val {
         Some(val) => {
-            let item: Item = bincode::deserialize(val.bytes()).unwrap();
+            let item: Item = serde_json::from_slice(val.bytes()).unwrap();
             if let Some(_) = params.not_exists {
                 return Err(AppError::CustomCode(
                     anyhow!("Key {} exists (nx)", key),
@@ -81,7 +81,7 @@ pub async fn write_key(
             .as_nanos() as i64,
         data: body.into(),
     };
-    let itemBytes = bincode::serialize(&item).unwrap();
+    let itemBytes = serde_json::to_vec(&item).unwrap();
     trx.set(key.as_bytes(), &itemBytes);
 
     info!("wrote it");

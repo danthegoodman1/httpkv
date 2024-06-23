@@ -74,7 +74,7 @@ async fn get_item(
     let trx = state.fdb.create_trx()?; // no need to commit for read only
     let value = trx.get(key.as_bytes(), true).await?;
     if let Some(val) = value {
-        let item: Item = bincode::deserialize(val.bytes()).unwrap();
+        let item: Item = serde_json::from_slice(val.bytes()).unwrap();
         let mut body = item.data;
         if params.start.is_some() || params.end.is_some() {
             // We need to get a subslice of the body
@@ -140,7 +140,7 @@ async fn list_items(
             items.extend(b"\n");
 
             // Deserialize the data
-            let data: Item = bincode::deserialize(item.value()).unwrap();
+            let data: Item = serde_json::from_slice(item.value()).unwrap();
             items.extend(item.data);
             items.extend(b"\n");
             items.extend(b"\n");
