@@ -114,7 +114,6 @@ func (s *HTTPServer) listItems(c *CustomContext, params ListParams) error {
 	span.SetAttributes(attribute.String("params", string(utils.MustMarshal(params))))
 	var items [][]byte
 
-	// TODO: Ignoring offset and reverse (this is easy in fdb)
 	limit := utils.Deref(params.Limit, 100)
 
 	_, err := db.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
