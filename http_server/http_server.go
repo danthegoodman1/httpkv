@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"go.opentelemetry.io/otel"
 	"net"
 	"net/http"
 	"os"
@@ -18,7 +19,10 @@ import (
 	"golang.org/x/net/http2"
 )
 
-var logger = gologger.NewLogger()
+var (
+	logger = gologger.NewLogger()
+	tracer = otel.GetTracerProvider().Tracer("kv")
+)
 
 type HTTPServer struct {
 	Echo *echo.Echo

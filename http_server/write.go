@@ -2,8 +2,11 @@ package http_server
 
 import (
 	"fmt"
+	"github.com/danthegoodman1/GoAPITemplate/tracing"
+	"github.com/danthegoodman1/GoAPITemplate/utils"
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog"
+	"go.opentelemetry.io/otel/attribute"
 	"io"
 	"net/http"
 	"time"
@@ -18,6 +21,8 @@ type WriteKeyParams struct {
 }
 
 func (s *HTTPServer) WriteKey(c *CustomContext) error {
+	ctx, span := tracing.CreateSpan(c.Request().Context(), tracer, "WriteKey")
+	defer span.End()
 	// Have to read the body before
 	body, err := io.ReadAll(c.Request().Body)
 	if err != nil {
@@ -29,9 +34,9 @@ func (s *HTTPServer) WriteKey(c *CustomContext) error {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 
-	ctx := c.Request().Context()
 	logger := zerolog.Ctx(ctx)
-	logger.Debug().Interface("params", params).Msg("Params")
+	logger.Debug().Interface("params", params).Msg("writing key")
+	span.SetAttributes(attribute.String("params", string(utils.MustMarshal(params))))
 
 	item, exists := tempDB[params.Key]
 	if exists && params.NotExists != nil {

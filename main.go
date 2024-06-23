@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/danthegoodman1/GoAPITemplate/observability"
+	"github.com/danthegoodman1/GoAPITemplate/tracing"
 	"net/http"
 	"os"
 	"os/signal"
@@ -24,6 +25,12 @@ func init() {
 
 func main() {
 	logger.Debug().Msg("starting httpkv")
+
+	_, err := tracing.InitTracer(context.Background())
+	if err != nil {
+		logger.Error().Err(err).Msg("failed to start tracer")
+		os.Exit(1)
+	}
 
 	prometheusReporter := observability.NewPrometheusReporter()
 	go func() {

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/bytedance/sonic"
 	"net/http"
 	"os"
 	"reflect"
@@ -314,4 +315,12 @@ func AsErr[T error](err error) (te T, ok bool) {
 func IsErr[T error](err error) bool {
 	_, ok := AsErr[T](err)
 	return ok
+}
+
+func MustMarshal(v any) []byte {
+	b, err := sonic.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return b
 }

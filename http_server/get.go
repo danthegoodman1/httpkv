@@ -3,10 +3,12 @@ package http_server
 import (
 	"bytes"
 	"fmt"
+	"github.com/danthegoodman1/GoAPITemplate/tracing"
 	"github.com/danthegoodman1/GoAPITemplate/utils"
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog"
 	"github.com/samber/lo"
+	"go.opentelemetry.io/otel/attribute"
 	"net/http"
 )
 
@@ -57,7 +59,9 @@ func (s *HTTPServer) GetOrList(c *CustomContext) error {
 }
 
 func (s *HTTPServer) getItem(c *CustomContext, params GetParams) error {
-	ctx := c.Request().Context()
+	ctx, span := tracing.CreateSpan(c.Request().Context(), tracer, "getItem")
+	defer span.End()
+	span.SetAttributes(attribute.String("params", string(utils.MustMarshal(params))))
 	logger := zerolog.Ctx(ctx)
 	logger.Debug().Msgf("Getting key '%s'", params.Key)
 
@@ -78,6 +82,9 @@ func (s *HTTPServer) getItem(c *CustomContext, params GetParams) error {
 }
 
 func (s *HTTPServer) listItems(c *CustomContext, params ListParams) error {
+	_, span := tracing.CreateSpan(c.Request().Context(), tracer, "listItems")
+	defer span.End()
+	span.SetAttributes(attribute.String("params", string(utils.MustMarshal(params))))
 	var items [][]byte
 
 	// TODO: Ignoring offset and reverse (this is easy in fdb)
