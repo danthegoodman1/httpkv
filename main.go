@@ -4,16 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/danthegoodman1/GoAPITemplate/observability"
+	"github.com/danthegoodman1/httpkv/observability"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"github.com/danthegoodman1/GoAPITemplate/gologger"
-	"github.com/danthegoodman1/GoAPITemplate/http_server"
-	"github.com/danthegoodman1/GoAPITemplate/utils"
+	"github.com/danthegoodman1/httpkv/gologger"
+	"github.com/danthegoodman1/httpkv/http_server"
+	"github.com/danthegoodman1/httpkv/utils"
 )
 
 var logger = gologger.NewLogger()

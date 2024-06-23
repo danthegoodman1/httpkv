@@ -2,8 +2,8 @@ package http_server
 
 import (
 	"fmt"
-	"github.com/danthegoodman1/GoAPITemplate/tracing"
-	"github.com/danthegoodman1/GoAPITemplate/utils"
+	"github.com/danthegoodman1/httpkv/tracing"
+	"github.com/danthegoodman1/httpkv/utils"
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/otel/attribute"
