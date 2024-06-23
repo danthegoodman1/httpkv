@@ -1,4 +1,6 @@
-use crate::{AppError, AppState};
+use std::io::Read;
+
+use crate::{AppError, AppState, Item};
 use axum::{
     extract::{Path, Query, State},
     http::{HeaderValue, StatusCode},
@@ -6,6 +8,7 @@ use axum::{
 };
 // use axum_extra::extract::Query;
 use anyhow::anyhow;
+use foundationdb::{KeySelector, RangeOption};
 use serde::Deserialize;
 use tracing::{debug, info_span, span, Level};
 use validator::Validate;
@@ -68,9 +71,11 @@ async fn get_item(
     params: &GetOrListParams,
     key: &String,
 ) -> Result<Response, AppError> {
-    let kv = state.kv.read().await;
-    if let Some(val) = kv.get(key) {
-        let mut body = val.data.clone();
+    let trx = state.fdb.create_trx()?; // no need to commit for read only
+    let value = trx.get(key.as_bytes(), true).await?;
+    if let Some(val) = value {
+        let item: Item = bincode::deserialize(val.bytes()).unwrap();
+        let mut body = item.data;
         if params.start.is_some() || params.end.is_some() {
             // We need to get a subslice of the body
             let start = params.start.or(Some(0)).unwrap() as usize;
@@ -84,7 +89,7 @@ async fn get_item(
 
         Ok(Response::builder()
             .status(StatusCode::OK)
-            .header("version", HeaderValue::from(val.version))
+            .header("version", HeaderValue::from(item.version))
             .body(body.into())
             .expect("Failed to construct response"))
     } else {
@@ -99,17 +104,21 @@ async fn list_items(
     prefix: Option<String>,
 ) -> Result<Response, AppError> {
     let mut items: Vec<u8> = Vec::new();
-    let kv = state.kv.read().await;
     let with_vals = params.with_vals.is_some();
 
     // Build the list of items
     let range_start = prefix.clone().or(Some(String::from(""))).unwrap(); // "" is beginning of DB
+    let reverse = params.reverse.is_some();
     let range_end = match prefix {
-        Some(p) => p.as_bytes().to_owned(),
+        Some(p) => {
+            if reverse {
+                p.as_bytes().to_owned() // use the prefix
+            }
+            vec![0xFF] // otherwise start from the end
+        },
         None => vec![0xFF], // 0xFF is end of DB
     };
     let range_end_str = String::from_utf8(range_end).unwrap();
-    let reverse = params.reverse.is_some();
     let limit = params.limit.or(Some(100)).unwrap() as usize;
     debug!(
         start = range_start,
@@ -120,50 +129,24 @@ async fn list_items(
         "Listing items",
     );
 
-    // Sometimes rust is a PITA and you just repeat yourself instead
-    if !reverse {
-        // Forward iterate
-        for (key, item) in kv.range(range_start..).take(limit) {
-            // Add the key
-            if with_vals {
-                items.extend(key.as_bytes());
-                items.extend("\n".as_bytes());
-                items.extend(item.data.clone());
-                items.extend("\n".as_bytes());
-                items.extend("\n".as_bytes());
-            } else {
-                items.extend(key.as_bytes());
-                items.extend("\n".as_bytes());
-            }
-        }
-    } else {
-        // Reverse iterate
+    let opt = RangeOption::from((KeySelector::first_greater_or_equal(range_start), KeySelector::first_greater_or_equal(range_end)));
+    opt.reverse = reverse;
+    opt.limit = Some(limit);
+    let trx = state.fdb.create_trx()?; // no need to commit for read only
+    let range = trx.get_range(&opt, 1, true).await?;
+    for item in &range {
+        if with_vals {
+            items.extend(item.key());
+            items.extend(b"\n");
 
-        // If we have a prefix, use it
-        let rev_range = match range_start.as_str() {
-            "" => {
-                let last_item = kv.last_key_value();
-                match last_item {
-                    Some(item) => {
-                        kv.range(..item.0.to_owned() + "~").rev() // temp for the map, just add something larger on the end, fdb client has just options for the range iterator https://docs.rs/foundationdb/latest/foundationdb/struct.RangeOption.html
-                    }
-                    None => kv.range(.."".to_string()).rev(),
-                }
-            }
-            _ => kv.range(..range_start).rev(),
-        };
-        for (key, item) in rev_range.take(limit) {
-            // Add the key
-            if with_vals {
-                items.extend(key.as_bytes());
-                items.extend("\n".as_bytes());
-                items.extend(item.data.clone());
-                items.extend("\n".as_bytes());
-                items.extend("\n".as_bytes());
-            } else {
-                items.extend(key.as_bytes());
-                items.extend("\n".as_bytes());
-            }
+            // Deserialize the data
+            let data: Item = bincode::deserialize(item.value()).unwrap();
+            items.extend(item.data);
+            items.extend(b"\n");
+            items.extend(b"\n");
+        } else {
+            items.extend(item.key());
+            items.extend(b"\n");
         }
     }
 
@@ -176,6 +159,5 @@ async fn list_items(
         .as_bytes();
         sep_len = sep.len();
     }
-
     Ok(items[0..items.len() - sep_len].to_vec().into_response())
 }

@@ -2,7 +2,10 @@ package http_server
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"github.com/apple/foundationdb/bindings/go/src/fdb"
+	"github.com/bytedance/sonic"
 	"github.com/danthegoodman1/httpkv/tracing"
 	"github.com/danthegoodman1/httpkv/utils"
 	"github.com/labstack/echo/v4"
@@ -65,20 +68,43 @@ func (s *HTTPServer) getItem(c *CustomContext, params GetParams) error {
 	logger := zerolog.Ctx(ctx)
 	logger.Debug().Msgf("Getting key '%s'", params.Key)
 
-	item, exists := tempDB[params.Key]
-	if exists {
-		c.Response().Header().Set("version", fmt.Sprint(item.Version))
-		var data []byte
-		if params.Start != nil || params.End != nil {
-			logger.Debug().Msgf("Using range for data %s", item.Data)
-			data = item.Data[utils.Deref(params.Start, 0):utils.Deref(params.End, len(item.Data)-1)]
-		} else {
-			data = item.Data
+	data, err := db.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
+		itemBytes, err := tx.Get(fdb.Key(params.Key)).Get()
+		if err != nil {
+			return nil, fmt.Errorf("error in tx.Get for key %s: %w", params.Key, err)
 		}
-		return c.Blob(http.StatusOK, "application/octet-stream", data)
+
+		exists := itemBytes == nil
+
+		var item Item
+		err = sonic.Unmarshal(itemBytes, &item)
+		if err != nil {
+			return nil, fmt.Errorf("error in sonic.Unmarshal for key %s: %w", params.Key, err)
+		}
+
+		if exists {
+			c.Response().Header().Set("version", fmt.Sprint(item.Version))
+			if params.Start != nil || params.End != nil {
+				logger.Debug().Msgf("Using range for data %s", item.Data)
+				return item.Data[utils.Deref(params.Start, 0):utils.Deref(params.End, len(item.Data)-1)], nil
+			} else {
+				return item.Data, nil
+			}
+		}
+
+		return nil, echo.NewHTTPError(http.StatusNotFound, fmt.Sprintf("Key %s not found", params.Key))
+	})
+
+	var he *echo.HTTPError
+	if errors.As(err, &he) {
+		return he
 	}
 
-	return c.String(http.StatusNotFound, fmt.Sprintf("Key %s not found", params.Key))
+	if err != nil {
+		return fmt.Errorf("error in fdb transaction: %w", err)
+	}
+
+	return c.Blob(http.StatusOK, "application/octet-stream", data.([]byte))
 }
 
 func (s *HTTPServer) listItems(c *CustomContext, params ListParams) error {
@@ -91,21 +117,37 @@ func (s *HTTPServer) listItems(c *CustomContext, params ListParams) error {
 	limit := utils.Deref(params.Limit, 100)
 	sep := lo.Ternary(params.ListVals == nil, "\n", "\n\n")
 
-	i := 0
-	for key, val := range tempDB {
-		var b []byte
-		b = append(b, []byte(key)...)
-		if params.ListVals != nil {
-			b = append(b, []byte("\n")...)
-			b = append(b, val.Data...)
+	_, err := db.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
+		opts := fdb.RangeOptions{
+			Limit:   limit,
+			Reverse: params.Reverse != nil,
+		}
+		keyRange := fdb.KeyRange{
+			Begin: fdb.Key(utils.Deref(params.From, "")),
+			End:   fdb.Key(lo.Ternary(params.Reverse != nil, utils.Deref(params.From, "\xff"), "\xff")),
+		}
+		iter := tx.GetRange(keyRange, opts).Iterator()
+		for iter.Advance() {
+			fdbItem, err := iter.Get()
+			if err != nil {
+				return nil, fmt.Errorf("error in fdb.Iterator.Get: %w", err)
+			}
+
+			var b []byte
+			b = append(b, []byte(fdbItem.Key)...)
+			if params.ListVals != nil {
+				b = append(b, []byte("\n")...)
+				b = append(b, fdbItem.Value...)
+			}
+
+			items = append(items, b)
 		}
 
-		items = append(items, b)
+		return nil, nil
+	})
 
-		if i >= limit {
-			break
-		}
-		i++
+	if err != nil {
+		return fmt.Errorf("error in ReadTransaction: %w", err)
 	}
 
 	return c.Blob(http.StatusOK, "application/octet-stream", bytes.Join(items, []byte(sep)))
