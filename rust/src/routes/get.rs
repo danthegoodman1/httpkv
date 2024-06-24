@@ -76,7 +76,7 @@ async fn get_item(
     let value = trx.get(key.as_bytes(), true).await?;
     if let Some(val) = value {
         let item: Item = serde_json::from_slice(val.bytes()).unwrap();
-        let mut body = item.data;
+        let mut body = item.Data;
         if params.start.is_some() || params.end.is_some() {
             // We need to get a subslice of the body
             let start = params.start.or(Some(0)).unwrap() as usize;
@@ -90,7 +90,7 @@ async fn get_item(
 
         Ok(Response::builder()
             .status(StatusCode::OK)
-            .header("version", HeaderValue::from(item.version))
+            .header("version", HeaderValue::from(item.Version))
             .body(body.into())
             .expect("Failed to construct response"))
     } else {

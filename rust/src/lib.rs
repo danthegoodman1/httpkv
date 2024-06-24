@@ -19,8 +19,8 @@ struct AppState {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 struct Item {
-    version: i64,
-    data: Vec<u8>,
+    Version: i64,
+    Data: Vec<u8>,
 }
 
 pub async fn start(addr: &str) {

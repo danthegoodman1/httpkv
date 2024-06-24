@@ -75,11 +75,11 @@ pub async fn write_key(
 
     // Write the value
     let item = crate::Item {
-        version: SystemTime::now()
+        Version: SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
             .as_nanos() as i64,
-        data: body.into(),
+        Data: body.into(),
     };
     let itemBytes = serde_json::to_vec(&item).unwrap();
     trx.set(key.as_bytes(), &itemBytes);
