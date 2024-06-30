@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::sync::Arc;
 
 use axum::{
     extract::DefaultBodyLimit,
@@ -6,25 +6,26 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
-use tokio::sync::RwLock;
+use serde::{Deserialize, Serialize};
 use tracing::info;
 
 mod routes;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 struct AppState {
-    kv: Arc<RwLock<BTreeMap<String, Item>>>,
+    fdb: Arc<foundationdb::Database>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 struct Item {
     version: i64,
     data: Vec<u8>,
 }
 
 pub async fn start(addr: &str) {
+    let _guard = unsafe { foundationdb::boot() };
     let state = AppState {
-        kv: Arc::new(RwLock::new(BTreeMap::new())),
+        fdb: Arc::new(foundationdb::Database::default().unwrap()),
     };
     let app = axum::Router::new()
         .route("/", get(routes::get::get_root))

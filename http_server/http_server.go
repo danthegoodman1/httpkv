@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/danthegoodman1/httpkv/gologger"
 	"github.com/danthegoodman1/httpkv/utils"
 	"github.com/go-playground/validator/v10"
@@ -33,7 +34,7 @@ type CustomValidator struct {
 }
 
 var (
-	tempDB map[string]Item // TODO: Not even threadsafe lol
+	db fdb.Database
 )
 
 func StartHTTPServer() *HTTPServer {
@@ -59,7 +60,7 @@ func StartHTTPServer() *HTTPServer {
 	s.Echo.POST("/:key", ccHandler(s.WriteKey), middleware.BodyLimit("95K"))
 
 	s.Echo.HTTPErrorHandler = customHTTPErrorHandler
-	tempDB = map[string]Item{}
+	db = fdb.MustOpenDefault() // TODO: Default open
 
 	s.Echo.Listener = listener
 	go func() {
