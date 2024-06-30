@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::{borrow::Cow, io::Read};
 
 use crate::{AppError, AppState, Item};
 use axum::{
@@ -19,12 +19,12 @@ pub struct GetOrListParams {
     list: Option<String>,
 
     // List params
-    limit: Option<i64>,
+    limit: Option<usize>,
     #[serde(default, alias = "vals")]
     with_vals: Option<String>,
     reverse: Option<String>,
-    start: Option<i64>,
-    end: Option<i64>,
+    start: Option<usize>,
+    end: Option<usize>,
 }
 
 pub async fn get_root(
@@ -75,12 +75,14 @@ async fn get_item(
     let trx = state.fdb.create_trx()?; // no need to commit for read only
     let value = trx.get(key.as_bytes(), true).await?;
     if let Some(val) = value {
-        let item: Item = serde_json::from_slice(val.bytes()).unwrap();
-        let mut body = item.Data;
+        let bytes = val.bytes().collect::<Result<Vec<u8>, _>>().unwrap();
+        let bytes = bytes.as_slice();
+        let item: Item = serde_json::from_slice(bytes).unwrap();
+        let mut body = item.data;
         if params.start.is_some() || params.end.is_some() {
             // We need to get a subslice of the body
             let start = params.start.or(Some(0)).unwrap() as usize;
-            let end = params.end.or(Some(body.len() as i64)).unwrap() as usize;
+            let end = params.end.or(Some(body.len())).unwrap() as usize;
             debug!(
                 "Getting subslice of value for key {} with start={} end={}",
                 key, start, end
@@ -90,7 +92,7 @@ async fn get_item(
 
         Ok(Response::builder()
             .status(StatusCode::OK)
-            .header("version", HeaderValue::from(item.Version))
+            .header("version", HeaderValue::from(item.version))
             .body(body.into())
             .expect("Failed to construct response"))
     } else {
@@ -111,20 +113,27 @@ async fn list_items(
     let reverse = params.reverse.is_some();
 
     // Build the list of items
-    let mut range_start = KeySelector::first_greater_or_equal(""); // "" is beginning of DB
-    let mut range_end = KeySelector::last_less_or_equal(vec![0xFF]); // 0xFF means end
+    let mut range_start = Cow::Borrowed("".as_bytes()); // "" is beginning of DB
+    let mut range_end: Cow<[u8]> = vec![0xFF].into(); // 0xFF means end
 
-    if prefix.is_some() && params.reverse.is_some() {
-        // Reversing from an end offset
-        range_end = KeySelector::last_less_than(prefix.unwrap());
-    } else if prefix.is_some() {
-        // Forward from a start offset
-        range_start = KeySelector::first_greater_than(prefix.unwrap());
+    if let Some(prefix_value) = prefix.as_ref() {
+        // .as_ref so it's not consumed by this block
+        if params.reverse.is_some() {
+            // Reversing from an end offset
+            range_end = prefix_value.as_bytes().into();
+        } else {
+            // Forward from a start offset
+            range_start = prefix_value.as_bytes().into();
+        }
     }
 
-    debug!(prefix = prefix, params = params, "Listing items",);
+    debug!(prefix = prefix, params = ?params, "Listing items"); // ? prefix says use debug representation
 
-    let opt = RangeOption::from((range_start, range_end));
+    // Build the list of items
+    let range_start = KeySelector::first_greater_or_equal(range_start); // "" is beginning of DB
+    let range_end = KeySelector::last_less_or_equal(range_end); // 0xFF means end
+
+    let mut opt = RangeOption::from((range_start, range_end));
     opt.reverse = reverse;
     opt.limit = params.limit.or(Some(100));
     let trx = state.fdb.create_trx()?; // no need to commit for read only
@@ -137,7 +146,7 @@ async fn list_items(
             items.extend(b":");
             // Deserialize the data
             let data: Item = serde_json::from_slice(item.value()).unwrap();
-            items.extend(BASE64_STANDARD.encode(item.data).as_bytes());
+            items.extend(BASE64_STANDARD.encode(data.data).as_bytes());
         }
         items.extend(b"\n");
     }
