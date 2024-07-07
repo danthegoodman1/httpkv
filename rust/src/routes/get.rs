@@ -1,4 +1,6 @@
-use crate::{AppError, AppState};
+use std::{borrow::Cow, io::Read};
+
+use crate::{AppError, AppState, Item};
 use axum::{
     extract::{Path, Query, State},
     http::{HeaderValue, StatusCode},
@@ -6,6 +8,8 @@ use axum::{
 };
 // use axum_extra::extract::Query;
 use anyhow::anyhow;
+use base64::prelude::*;
+use foundationdb::{KeySelector, RangeOption};
 use serde::Deserialize;
 use tracing::{debug, info_span, span, Level};
 use validator::Validate;
@@ -15,12 +19,12 @@ pub struct GetOrListParams {
     list: Option<String>,
 
     // List params
-    limit: Option<i64>,
+    limit: Option<usize>,
     #[serde(default, alias = "vals")]
     with_vals: Option<String>,
     reverse: Option<String>,
-    start: Option<i64>,
-    end: Option<i64>,
+    start: Option<usize>,
+    end: Option<usize>,
 }
 
 pub async fn get_root(
@@ -68,13 +72,17 @@ async fn get_item(
     params: &GetOrListParams,
     key: &String,
 ) -> Result<Response, AppError> {
-    let kv = state.kv.read().await;
-    if let Some(val) = kv.get(key) {
-        let mut body = val.data.clone();
+    let trx = state.fdb.create_trx()?; // no need to commit for read only
+    let value = trx.get(key.as_bytes(), true).await?;
+    if let Some(val) = value {
+        let bytes = val.bytes().collect::<Result<Vec<u8>, _>>().unwrap();
+        let bytes = bytes.as_slice();
+        let item: Item = serde_json::from_slice(bytes).unwrap();
+        let mut body = item.data;
         if params.start.is_some() || params.end.is_some() {
             // We need to get a subslice of the body
             let start = params.start.or(Some(0)).unwrap() as usize;
-            let end = params.end.or(Some(body.len() as i64)).unwrap() as usize;
+            let end = params.end.or(Some(body.len())).unwrap() as usize;
             debug!(
                 "Getting subslice of value for key {} with start={} end={}",
                 key, start, end
@@ -84,11 +92,14 @@ async fn get_item(
 
         Ok(Response::builder()
             .status(StatusCode::OK)
-            .header("version", HeaderValue::from(val.version))
+            .header("version", HeaderValue::from(item.version))
             .body(body.into())
             .expect("Failed to construct response"))
     } else {
-        Err(AppError::CustomCode(anyhow!("not found"), StatusCode::NOT_FOUND))
+        Err(AppError::CustomCode(
+            anyhow!("not found"),
+            StatusCode::NOT_FOUND,
+        ))
     }
 }
 
@@ -98,84 +109,47 @@ async fn list_items(
     params: &GetOrListParams,
     prefix: Option<String>,
 ) -> Result<Response, AppError> {
-    let mut items: Vec<u8> = Vec::new();
-    let kv = state.kv.read().await;
     let with_vals = params.with_vals.is_some();
+    let reverse = params.reverse.is_some();
 
     // Build the list of items
-    let range_start = prefix.clone().or(Some(String::from(""))).unwrap(); // "" is beginning of DB
-    let range_end = match prefix {
-        Some(p) => p.as_bytes().to_owned(),
-        None => vec![0xFF], // 0xFF is end of DB
-    };
-    let range_end_str = String::from_utf8(range_end).unwrap();
-    let reverse = params.reverse.is_some();
-    let limit = params.limit.or(Some(100)).unwrap() as usize;
-    debug!(
-        start = range_start,
-        end = range_end_str,
-        limit = limit,
-        with_vals = with_vals,
-        reverse = reverse,
-        "Listing items",
-    );
+    let mut range_start = Cow::Borrowed("".as_bytes()); // "" is beginning of DB
+    let mut range_end: Cow<[u8]> = vec![0xFF].into(); // 0xFF means end
 
-    // Sometimes rust is a PITA and you just repeat yourself instead
-    if !reverse {
-        // Forward iterate
-        for (key, item) in kv.range(range_start..).take(limit) {
-            // Add the key
-            if with_vals {
-                items.extend(key.as_bytes());
-                items.extend("\n".as_bytes());
-                items.extend(item.data.clone());
-                items.extend("\n".as_bytes());
-                items.extend("\n".as_bytes());
-            } else {
-                items.extend(key.as_bytes());
-                items.extend("\n".as_bytes());
-            }
-        }
-    } else {
-        // Reverse iterate
-
-        // If we have a prefix, use it
-        let rev_range = match range_start.as_str() {
-            "" => {
-                let last_item = kv.last_key_value();
-                match last_item {
-                    Some(item) => {
-                        kv.range(..item.0.to_owned() + "~").rev() // temp for the map, just add something larger on the end, fdb client has just options for the range iterator https://docs.rs/foundationdb/latest/foundationdb/struct.RangeOption.html
-                    }
-                    None => kv.range(.."".to_string()).rev(),
-                }
-            }
-            _ => kv.range(..range_start).rev(),
-        };
-        for (key, item) in rev_range.take(limit) {
-            // Add the key
-            if with_vals {
-                items.extend(key.as_bytes());
-                items.extend("\n".as_bytes());
-                items.extend(item.data.clone());
-                items.extend("\n".as_bytes());
-                items.extend("\n".as_bytes());
-            } else {
-                items.extend(key.as_bytes());
-                items.extend("\n".as_bytes());
-            }
+    if let Some(prefix_value) = prefix.as_ref() {
+        // .as_ref so it's not consumed by this block
+        if params.reverse.is_some() {
+            // Reversing from an end offset
+            range_end = prefix_value.as_bytes().into();
+        } else {
+            // Forward from a start offset
+            range_start = prefix_value.as_bytes().into();
         }
     }
 
-    let mut sep_len = 0;
-    if items.len() > 0 {
-        let sep = match with_vals {
-            true => "\n\n",
-            false => "\n",
+    debug!(prefix = prefix, params = ?params, "Listing items"); // ? prefix says use debug representation
+
+    // Build the list of items
+    let range_start = KeySelector::first_greater_or_equal(range_start); // "" is beginning of DB
+    let range_end = KeySelector::last_less_or_equal(range_end); // 0xFF means end
+
+    let mut opt = RangeOption::from((range_start, range_end));
+    opt.reverse = reverse;
+    opt.limit = params.limit.or(Some(100));
+    let trx = state.fdb.create_trx()?; // no need to commit for read only
+    let range = trx.get_range(&opt, 1, true).await?;
+
+    let mut items: Vec<u8> = Vec::new();
+    for item in &range {
+        items.extend(item.key());
+        if with_vals {
+            items.extend(b":");
+            // Deserialize the data
+            let data: Item = serde_json::from_slice(item.value()).unwrap();
+            items.extend(BASE64_STANDARD.encode(data.data).as_bytes());
         }
-        .as_bytes();
-        sep_len = sep.len();
+        items.extend(b"\n");
     }
 
-    Ok(items[0..items.len() - sep_len].to_vec().into_response())
+    Ok(items[0..items.len() - b"\n".len()].to_vec().into_response())
 }
