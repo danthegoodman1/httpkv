@@ -60,7 +60,8 @@ func StartHTTPServer() *HTTPServer {
 	s.Echo.POST("/:key", ccHandler(s.WriteKey), middleware.BodyLimit("95K"))
 
 	s.Echo.HTTPErrorHandler = customHTTPErrorHandler
-	db = fdb.MustOpenDefault() // TODO: Default open
+	fdb.MustAPIVersion(710)
+	db = fdb.MustOpenDefault()
 
 	s.Echo.Listener = listener
 	go func() {
